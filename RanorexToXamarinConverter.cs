@@ -320,38 +320,76 @@ public class {testCase.Name}Tests : BaseTestFixture
         var recording = XDocument.Load(rxrecPath);
         var testClassName = Path.GetFileNameWithoutExtension(rxrecPath) + "Tests";
         var xamarinTest = new StringBuilder();
-
+    
         // Add standard using statements
         xamarinTest.AppendLine("using System;");
         xamarinTest.AppendLine("using NUnit.Framework;");
         xamarinTest.AppendLine("using Xamarin.UITest;");
         xamarinTest.AppendLine();
-
-        // Create test class
-        xamarinTest.AppendLine($"[TestFixture]");
-        xamarinTest.AppendLine($"public class {testClassName} : BaseTestFixture");
+    
+        // Extract namespace from codegen element
+        var namespaceName = recording.Descendants("codegen").FirstOrDefault()?.Attribute("namespace")?.Value ?? "XamarinTests";
+        
+        // Start namespace
+        xamarinTest.AppendLine($"namespace {namespaceName}");
         xamarinTest.AppendLine("{");
-
-        // Convert recorded actions
-        xamarinTest.AppendLine("    [Test]");
-        xamarinTest.AppendLine($"    public void {testClassName}Main()");
+    
+        // Create test class
+        xamarinTest.AppendLine("    [TestFixture]");
+        xamarinTest.AppendLine($"    public class {testClassName} : BaseTestFixture");
         xamarinTest.AppendLine("    {");
-
-        // Process each recorded action
-        foreach (var action in recording.Descendants("action"))
+    
+        // Convert variables
+        foreach (var variable in recording.Descendants("var"))
         {
-            string convertedAction = ConvertRecordedAction(action);
-            if (!string.IsNullOrEmpty(convertedAction))
+            var varName = variable.Attribute("name")?.Value;
+            var varValue = variable.Value?.Trim();
+            if (!string.IsNullOrEmpty(varName))
             {
-                xamarinTest.AppendLine($"        {convertedAction}");
+                xamarinTest.AppendLine($"        // Original Ranorex variable: {varName} = {varValue}");
+                xamarinTest.AppendLine($"        private const string {varName} = \"{varValue}\";");
             }
         }
-
+        xamarinTest.AppendLine();
+    
+        // Convert recorded actions
+        xamarinTest.AppendLine("        [Test]");
+        xamarinTest.AppendLine($"        public void {testClassName}Main()");
+        xamarinTest.AppendLine("        {");
+    
+        // Process userrecorditem elements
+        foreach (var recordItem in recording.Descendants("userrecorditem"))
+        {
+            string className = recordItem.Attribute("classname")?.Value ?? string.Empty;
+            string methodName = recordItem.Attribute("methodname")?.Value ?? string.Empty;
+            
+            xamarinTest.AppendLine($"            // Original Ranorex method call: {className}.{methodName}");
+            
+            // Process arguments
+            var arguments = recordItem.Descendants("argument");
+            xamarinTest.AppendLine("            // Arguments:");
+            foreach (var arg in arguments)
+            {
+                string argName = arg.Attribute("argname")?.Value ?? string.Empty;
+                string varName = arg.Attribute("variable")?.Value ?? string.Empty;
+                var argValue = arg.Element("argvalue")?.Value?.Trim();
+                var argType = arg.Element("argvaluetype")?.Value?.Trim();
+    
+                xamarinTest.AppendLine($"            //   {argName}: {(!string.IsNullOrEmpty(varName) ? $"Variable: {varName}" : $"Value: {argValue}")} (Type: {argType})");
+            }
+    
+            xamarinTest.AppendLine("            // TODO: Convert this Ranorex method call to Xamarin.UITest equivalent");
+            xamarinTest.AppendLine();
+        }
+    
+        // Close method and class
+        xamarinTest.AppendLine("        }");
         xamarinTest.AppendLine("    }");
         xamarinTest.AppendLine("}");
-
+    
         // Save converted test
-        string outputPath = Path.Combine(_outputPath, $"{testClassName}.cs");
+        string outputPath = Path.Combine(_outputPath, "Tests", $"{testClassName}.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(outputPath) ?? string.Empty);
         File.WriteAllText(outputPath, xamarinTest.ToString());
     }
 
