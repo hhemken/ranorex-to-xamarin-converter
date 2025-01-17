@@ -214,77 +214,105 @@ public class {testCase.Name}Tests : BaseTestFixture
         xamarinTest.AppendLine("}");
     }
 
-    private string ConvertActivity(string activityType, Dictionary<string, string> variables)
+    
+    private string? ConvertActivity(string activityType, Dictionary<string, string> variables)
     {
-        switch (activityType.ToLower())
+        // Create original step comment
+        string originalStep = $"// Original Ranorex step - Type: {activityType}";
+        foreach (var kvp in variables)
         {
-            case "click":
-            case "touch":
-                return $"app.Tap(x => x.Marked(\"{variables.GetValueOrDefault("target")}\"));";
-
-            case "setvalue":
-                return $"app.EnterText(x => x.Marked(\"{variables.GetValueOrDefault("target")}\"), \"{variables.GetValueOrDefault("value")}\");";
-
-            case "wait":
-                int timeout;
-                if (int.TryParse(variables.GetValueOrDefault("timeout", "5000"), out timeout))
-                {
-                    return $"app.WaitForElement(x => x.Marked(\"{variables.GetValueOrDefault("target")}\"), timeout: TimeSpan.FromMilliseconds({timeout}));";
-                }
-                return $"app.WaitForElement(x => x.Marked(\"{variables.GetValueOrDefault("target")}\"));";
-
-            case "executescript":
-                string script = variables.GetValueOrDefault("script", "");
-                return ConvertCustomScript(script);
-
-            case "invoke":
-                string method = variables.GetValueOrDefault("method", "");
-                return ConvertMethodInvocation(method, variables);
-
-            default:
-                LogMessage($"Unsupported activity type: {activityType}");
-                return null;
+            originalStep += $", {kvp.Key}: {kvp.Value}";
         }
+    
+        string? convertedStep = activityType.ToLower() switch
+        {
+            "click" or "touch" => $"app.Tap(x => x.Marked(\"{variables.GetValueOrDefault("target")}\"));",
+            
+            "setvalue" => $"app.EnterText(x => x.Marked(\"{variables.GetValueOrDefault("target")}\"), \"{variables.GetValueOrDefault("value")}\");",
+            
+            "wait" => int.TryParse(variables.GetValueOrDefault("timeout", "5000"), out int timeout) 
+                ? $"app.WaitForElement(x => x.Marked(\"{variables.GetValueOrDefault("target")}\"), timeout: TimeSpan.FromMilliseconds({timeout}));"
+                : $"app.WaitForElement(x => x.Marked(\"{variables.GetValueOrDefault("target")}\"));",
+            
+            "executescript" => null, // Will be handled as comment
+            
+            "invoke" => null, // Will be handled as comment
+            
+            _ => null
+        };
+    
+        // If we couldn't convert the step, return it as a TODO comment
+        if (convertedStep == null)
+        {
+            return $"{originalStep}\n        // TODO: No direct Xamarin.UITest equivalent - Needs manual conversion";
+        }
+    
+        // Return both the original comment and the converted step
+        return $"{originalStep}\n        {convertedStep}";
     }
-
-    private string ConvertValidation(string validationType, string compareValue, XElement element)
+    
+    // Updated ConvertValidation method
+    private string? ConvertValidation(string validationType, string compareValue, XElement? element)
     {
-        string elementId = element?.Attribute("id")?.Value ?? "";
+        string elementId = element?.Attribute("id")?.Value ?? string.Empty;
         
-        switch (validationType.ToLower())
+        // Create original validation comment
+        string originalValidation = $"// Original Ranorex validation - Type: {validationType}, Compare: {compareValue}, ElementId: {elementId}";
+    
+        string? convertedValidation = validationType.ToLower() switch
         {
-            case "exists":
-                return $"Assert.That(app.Query(x => x.Marked(\"{elementId}\")).Any(), Is.True, \"Element {elementId} should exist\");";
-
-            case "notexists":
-                return $"Assert.That(app.Query(x => x.Marked(\"{elementId}\")).Any(), Is.False, \"Element {elementId} should not exist\");";
-
-            case "equals":
-                return $@"Assert.That(app.Query(x => x.Marked(""{elementId}"")).First().Text, Is.EqualTo(""{compareValue}""));";
-
-            case "contains":
-                return $@"Assert.That(app.Query(x => x.Marked(""{elementId}"")).First().Text, Does.Contain(""{compareValue}""));";
-
-            case "enabled":
-                return $"Assert.That(app.Query(x => x.Marked(\"{elementId}\")).First().Enabled, Is.True, \"Element {elementId} should be enabled\");";
-
-            case "disabled":
-                return $"Assert.That(app.Query(x => x.Marked(\"{elementId}\")).First().Enabled, Is.False, \"Element {elementId} should be disabled\");";
-
-            default:
-                LogMessage($"Unsupported validation type: {validationType}");
-                return null;
+            "exists" => $"Assert.That(app.Query(x => x.Marked(\"{elementId}\")).Any(), Is.True, \"Element {elementId} should exist\");",
+            
+            "notexists" => $"Assert.That(app.Query(x => x.Marked(\"{elementId}\")).Any(), Is.False, \"Element {elementId} should not exist\");",
+            
+            "equals" => $@"Assert.That(app.Query(x => x.Marked(""{elementId}"")).First().Text, Is.EqualTo(""{compareValue}""));",
+            
+            "contains" => $@"Assert.That(app.Query(x => x.Marked(""{elementId}"")).First().Text, Does.Contain(""{compareValue}""));",
+            
+            "enabled" => $"Assert.That(app.Query(x => x.Marked(\"{elementId}\")).First().Enabled, Is.True, \"Element {elementId} should be enabled\");",
+            
+            "disabled" => $"Assert.That(app.Query(x => x.Marked(\"{elementId}\")).First().Enabled, Is.False, \"Element {elementId} should be disabled\");",
+            
+            _ => null
+        };
+    
+        // If we couldn't convert the validation, return it as a TODO comment
+        if (convertedValidation == null)
+        {
+            return $"{originalValidation}\n        // TODO: No direct Xamarin.UITest equivalent - Needs manual conversion";
         }
+    
+        // Return both the original comment and the converted validation
+        return $"{originalValidation}\n        {convertedValidation}";
+    }
+    
+    private string? ConvertCustomScript(string script)
+    {
+        if (string.IsNullOrEmpty(script))
+            return null;
+    
+        return $@"// Original Ranorex custom script:
+            /*
+            {script}
+            */
+            // TODO: Custom script needs manual conversion to Xamarin.UITest";
     }
 
-    private string ConvertCustomScript(string script)
+    private string? ConvertMethodInvocation(string method, Dictionary<string, string> variables)
     {
-        return $"// Custom script conversion needed: {script}";
-    }
-
-    private string ConvertMethodInvocation(string method, Dictionary<string, string> variables)
-    {
-        return $"// Method invocation conversion needed: {method}";
+        if (string.IsNullOrEmpty(method))
+            return null;
+    
+        StringBuilder comment = new StringBuilder();
+        comment.AppendLine($"// Original Ranorex method invocation: {method}");
+        comment.AppendLine("        // Parameters:");
+        foreach (var kvp in variables)
+        {
+            comment.AppendLine($"        //   {kvp.Key}: {kvp.Value}");
+        }
+        comment.AppendLine("        // TODO: Method invocation needs manual conversion to Xamarin.UITest");
+    
+        return comment.ToString();
     }
     
     private void ConvertRecordingFile(string rxrecPath)
@@ -327,49 +355,54 @@ public class {testCase.Name}Tests : BaseTestFixture
         File.WriteAllText(outputPath, xamarinTest.ToString());
     }
 
-    private string ConvertRecordedAction(XElement action)
+    private string? ConvertRecordedAction(XElement action)
     {
-        string actionType = action.Attribute("type")?.Value ?? "";
-        string varName = action.Attribute("varname")?.Value ?? "";
+        string actionType = action.Attribute("type")?.Value ?? string.Empty;
+        string varName = action.Attribute("varname")?.Value ?? string.Empty;
         var path = action.Elements("path").FirstOrDefault();
         var mouseButton = action.Attribute("mousebutton")?.Value;
         var value = action.Attribute("value")?.Value;
-
+    
+        // Create original action comment
+        string originalAction = $"// Original Ranorex recording - Type: {actionType}";
+        if (!string.IsNullOrEmpty(varName)) originalAction += $", VarName: {varName}";
+        if (!string.IsNullOrEmpty(mouseButton)) originalAction += $", MouseButton: {mouseButton}";
+        if (!string.IsNullOrEmpty(value)) originalAction += $", Value: {value}";
+    
         // Extract element identification information
         string elementQuery = BuildElementQuery(path);
-
-        switch (actionType.ToLower())
-        {
-            case "click":
-            case "touch":
-                return $"app.Tap({elementQuery});";
-
-            case "setvalue":
-                return $"app.EnterText({elementQuery}, \"{value}\");";
-
-            case "movemouse":
-                // Xamarin.UITest doesn't have direct mouse movement equivalent
-                return null;
-
-            case "keyboard":
-                if (value?.Contains("Return") ?? false)
-                    return "app.PressEnter();";
-                else if (value?.Contains("Tab") ?? false)
-                    return "app.DismissKeyboard();";
-                return $"app.EnterText(\"{value}\");";
-
-            case "wait":
-                return $"app.WaitForElement({elementQuery});";
-
-            case "validate":
-                return $"Assert.That(app.Query({elementQuery}).Any(), Is.True);";
-
-            default:
-                LogMessage($"Unsupported action type: {actionType}");
-                return null;
-        }
-    }
     
+        string? convertedAction = actionType.ToLower() switch
+        {
+            "click" or "touch" => $"app.Tap({elementQuery});",
+            
+            "setvalue" => $"app.EnterText({elementQuery}, \"{value}\");",
+            
+            "movemouse" => null, // No direct equivalent
+            
+            "keyboard" => value?.Contains("Return") ?? false 
+                ? "app.PressEnter();"
+                : value?.Contains("Tab") ?? false 
+                    ? "app.DismissKeyboard();" 
+                    : $"app.EnterText(\"{value}\");",
+            
+            "wait" => $"app.WaitForElement({elementQuery});",
+            
+            "validate" => $"Assert.That(app.Query({elementQuery}).Any(), Is.True);",
+            
+            _ => null
+        };
+    
+        // If we couldn't convert the action, return it as a TODO comment
+        if (convertedAction == null)
+        {
+            return $"{originalAction}\n        // TODO: No direct Xamarin.UITest equivalent - Needs manual conversion";
+        }
+    
+        // Return both the original comment and the converted action
+        return $"{originalAction}\n        {convertedAction}";
+    }
+
     private string BuildElementQuery(XElement pathElement)
     {
         if (pathElement == null)
