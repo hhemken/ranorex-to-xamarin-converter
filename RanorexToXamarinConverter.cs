@@ -44,9 +44,10 @@ public class RanorexToXamarinConverter
                     try
                     {
                         LogMessage($"Processing file: {filePath}");
+                        string targetPath = GetTargetPath(filePath);
                         ConvertSingleFile(filePath);
                         _filesProcessed++;
-                        LogMessage($"Successfully converted: {filePath}");
+                        LogMessage($"Successfully converted: {filePath} -> {targetPath}");
                     }
                     catch (Exception ex)
                     {
@@ -68,6 +69,23 @@ public class RanorexToXamarinConverter
         }
     }
 
+    private string GetTargetPath(string sourcePath)
+    {
+        string extension = Path.GetExtension(sourcePath).ToLower();
+        string fileName = Path.GetFileNameWithoutExtension(sourcePath);
+        
+        switch (extension)
+        {
+            case ".rxtst":
+                return Path.Combine(_outputPath, "Tests", $"{fileName}Tests.cs");
+            case ".rxrec":
+                return Path.Combine(_outputPath, "Tests", $"{fileName}Tests.cs");
+            case ".cs":
+                return Path.Combine(_outputPath, $"{fileName}.cs");
+            default:
+                return Path.Combine(_outputPath, Path.GetFileName(sourcePath));
+        }
+    }
     public void ConvertSingleFile(string inputPath)
     {
         if (!ValidateFile(inputPath))
@@ -129,6 +147,7 @@ public class RanorexToXamarinConverter
         
         return testCases;
     }
+
     private void ConvertTestCase(TestCase testCase)
     {
         var xamarinTest = new StringBuilder();
@@ -146,7 +165,7 @@ public class RanorexToXamarinConverter
             Path.Combine(_outputPath, $"{testCase.Name}Tests.cs"),
             xamarinTest.ToString());
     }
-
+    
     private void ConvertTestSteps(TestCase testCase, StringBuilder xamarinTest)
     {
         // Get the test case module from the path
@@ -350,7 +369,7 @@ public class {testCase.Name}Tests : BaseTestFixture
                 return null;
         }
     }
-
+    
     private string BuildElementQuery(XElement pathElement)
     {
         if (pathElement == null)
@@ -541,3 +560,4 @@ converter.ProcessRanorexDirectory("path/to/ranorex/project");
 // Or convert single file
 converter.ConvertSingleFile("path/to/your/file.rxtst");
 */
+    
