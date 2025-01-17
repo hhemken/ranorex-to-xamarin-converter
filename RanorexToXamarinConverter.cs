@@ -124,13 +124,11 @@ public class RanorexToXamarinConverter
             {
                 Name = element.Attribute("name")?.Value,
                 Path = element.Attribute("path")?.Value,
-                // Add other relevant properties
             });
         }
         
         return testCases;
     }
-
     private void ConvertTestCase(TestCase testCase)
     {
         var xamarinTest = new StringBuilder();
@@ -151,50 +149,125 @@ public class RanorexToXamarinConverter
 
     private void ConvertTestSteps(TestCase testCase, StringBuilder xamarinTest)
     {
-        // Example conversion of common Ranorex actions to Xamarin.UITest
-        var conversionMap = new Dictionary<string, string>
+        // Get the test case module from the path
+        var testModule = XDocument.Load(testCase.Path);
+        
+        // Start building the test class
+        xamarinTest.AppendLine($@"[TestFixture]
+public class {testCase.Name}Tests : BaseTestFixture
+{{
+    [Test]
+    public void {testCase.Name}Test()
+    {{");
+
+        // Process each activity in the test case
+        foreach (var activity in testModule.Descendants("activity"))
         {
-            {"Click", "Tap"},
-            {"SetValue", "EnterText"},
-            {"Touch", "Tap"},
-            {"ValidateAttributeEqual", "WaitForElement"}
-        };
-        
-        // Add logic to convert specific Ranorex actions to Xamarin.UITest commands
-        // This would need to be customized based on your specific test cases
+            string activityType = activity.Attribute("type")?.Value ?? "";
+            var variables = activity.Elements("var").ToDictionary(
+                v => v.Attribute("name")?.Value ?? "",
+                v => v.Attribute("value")?.Value ?? ""
+            );
+
+            string convertedStep = ConvertActivity(activityType, variables);
+            if (!string.IsNullOrEmpty(convertedStep))
+            {
+                xamarinTest.AppendLine($"        {convertedStep}");
+            }
+        }
+
+        // Process any validation rules
+        foreach (var validation in testModule.Descendants("validationrule"))
+        {
+            string validationType = validation.Attribute("type")?.Value ?? "";
+            string compareValue = validation.Attribute("compare")?.Value ?? "";
+            var element = validation.Element("element");
+
+            string convertedValidation = ConvertValidation(validationType, compareValue, element);
+            if (!string.IsNullOrEmpty(convertedValidation))
+            {
+                xamarinTest.AppendLine($"        {convertedValidation}");
+            }
+        }
+
+        // Close the test method and class
+        xamarinTest.AppendLine("    }");
+        xamarinTest.AppendLine("}");
     }
 
-    private void ConvertSingleCSharpFile(string csharpPath)
+    private string ConvertActivity(string activityType, Dictionary<string, string> variables)
     {
-        // Create output directory if it doesn't exist
-        Directory.CreateDirectory(_outputPath);
-        
-        var code = File.ReadAllText(csharpPath);
-        var convertedCode = ConvertRanorexCode(code);
-        
-        // Save converted file
-        string outputFileName = Path.GetFileName(csharpPath);
-        File.WriteAllText(
-            Path.Combine(_outputPath, outputFileName),
-            convertedCode);
+        switch (activityType.ToLower())
+        {
+            case "click":
+            case "touch":
+                return $"app.Tap(x => x.Marked(\"{variables.GetValueOrDefault("target")}\"));";
+
+            case "setvalue":
+                return $"app.EnterText(x => x.Marked(\"{variables.GetValueOrDefault("target")}\"), \"{variables.GetValueOrDefault("value")}\");";
+
+            case "wait":
+                int timeout;
+                if (int.TryParse(variables.GetValueOrDefault("timeout", "5000"), out timeout))
+                {
+                    return $"app.WaitForElement(x => x.Marked(\"{variables.GetValueOrDefault("target")}\"), timeout: TimeSpan.FromMilliseconds({timeout}));";
+                }
+                return $"app.WaitForElement(x => x.Marked(\"{variables.GetValueOrDefault("target")}\"));";
+
+            case "executescript":
+                string script = variables.GetValueOrDefault("script", "");
+                return ConvertCustomScript(script);
+
+            case "invoke":
+                string method = variables.GetValueOrDefault("method", "");
+                return ConvertMethodInvocation(method, variables);
+
+            default:
+                LogMessage($"Unsupported activity type: {activityType}");
+                return null;
+        }
     }
 
-    private string ConvertRanorexCode(string code)
+    private string ConvertValidation(string validationType, string compareValue, XElement element)
     {
-        // Replace Ranorex namespaces
-        code = code.Replace("using Ranorex;", "using Xamarin.UITest;");
+        string elementId = element?.Attribute("id")?.Value ?? "";
         
-        // Convert Ranorex repository references
-        code = Regex.Replace(
-            code,
-            @"repo\.([A-Za-z0-9_]+)\.Click\(\)",
-            "app.Tap(x => x.Marked(\"$1\"))");
-            
-        // Add more conversion patterns as needed
-        
-        return code;
+        switch (validationType.ToLower())
+        {
+            case "exists":
+                return $"Assert.That(app.Query(x => x.Marked(\"{elementId}\")).Any(), Is.True, \"Element {elementId} should exist\");";
+
+            case "notexists":
+                return $"Assert.That(app.Query(x => x.Marked(\"{elementId}\")).Any(), Is.False, \"Element {elementId} should not exist\");";
+
+            case "equals":
+                return $@"Assert.That(app.Query(x => x.Marked(""{elementId}"")).First().Text, Is.EqualTo(""{compareValue}""));";
+
+            case "contains":
+                return $@"Assert.That(app.Query(x => x.Marked(""{elementId}"")).First().Text, Does.Contain(""{compareValue}""));";
+
+            case "enabled":
+                return $"Assert.That(app.Query(x => x.Marked(\"{elementId}\")).First().Enabled, Is.True, \"Element {elementId} should be enabled\");";
+
+            case "disabled":
+                return $"Assert.That(app.Query(x => x.Marked(\"{elementId}\")).First().Enabled, Is.False, \"Element {elementId} should be disabled\");";
+
+            default:
+                LogMessage($"Unsupported validation type: {validationType}");
+                return null;
+        }
     }
 
+    private string ConvertCustomScript(string script)
+    {
+        return $"// Custom script conversion needed: {script}";
+    }
+
+    private string ConvertMethodInvocation(string method, Dictionary<string, string> variables)
+    {
+        return $"// Method invocation conversion needed: {method}";
+    }
+    
     private void ConvertRecordingFile(string rxrecPath)
     {
         var recording = XDocument.Load(rxrecPath);
@@ -273,8 +346,7 @@ public class RanorexToXamarinConverter
                 return $"Assert.That(app.Query({elementQuery}).Any(), Is.True);";
 
             default:
-                // Log unsupported action type
-                Console.WriteLine($"Unsupported action type: {actionType}");
+                LogMessage($"Unsupported action type: {actionType}");
                 return null;
         }
     }
@@ -307,6 +379,34 @@ public class RanorexToXamarinConverter
         return $"x => x.{string.Join(".", conditions)}";
     }
 
+    private void ConvertSingleCSharpFile(string csharpPath)
+    {
+        Directory.CreateDirectory(_outputPath);
+        var code = File.ReadAllText(csharpPath);
+        var convertedCode = ConvertRanorexCode(code);
+        
+        string outputFileName = Path.GetFileName(csharpPath);
+        File.WriteAllText(
+            Path.Combine(_outputPath, outputFileName),
+            convertedCode);
+    }
+
+    private string ConvertRanorexCode(string code)
+    {
+        // Replace Ranorex namespaces
+        code = code.Replace("using Ranorex;", "using Xamarin.UITest;");
+        
+        // Convert Ranorex repository references
+        code = Regex.Replace(
+            code,
+            @"repo\.([A-Za-z0-9_]+)\.Click\(\)",
+            "app.Tap(x => x.Marked(\"$1\"))");
+            
+        // Add more conversion patterns as needed
+        
+        return code;
+    }
+    
     private void CreateTestProjectStructure()
     {
         // Create necessary directories
